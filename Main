@@ -1,0 +1,330 @@
+import matplotlib.pyplot as plt
+import numpy as np
+import math
+import matplotlib.patches as mpatches
+import random
+import matplotlib.image as mpimg
+from scipy.ndimage import convolve
+import sklearn.decomposition as decomp
+import cv2
+ 
+# Falso infinito, porém suficiente
+INF = 9999999999999
+ 
+# Settadas no load
+PATH = ""
+TRAINING_SET = {}
+TEST_SET = {}
+ 
+# Preenche as variaveis globais PATH, TRAINING_SET e TEST_SET
+# path é o path onde estão as imagens
+# tarining_set_map é o mapa de classes, passado vazio
+# n é o numero de imagens por classe
+# PATH recebe path
+# TEST_SET recebe uma imagem de cada classe escolhida aleatoriamente
+# TRAINING_SET recebe as imagens restantes e ficam agrupadas pelas classes a qual pertencem
+def load(path, training_set_map, n, ext='.jpg'):
+    global PATH, TRAINING_SET, TEST_SET
+    PATH = path
+    TRAINING_SET = training_set_map
+    TEST_SET = {'all': []}
+    for c in TRAINING_SET:
+        a = random.randrange(n)    
+        for i in range(0,n):
+            file_name = c + '-' + str(i+1) + ext
+            if i == a:
+                TEST_SET['all'] = np.ndarray.tolist(np.append(file_name, TEST_SET['all']))
+            else:
+                TRAINING_SET[c] = np.ndarray.tolist(np.append(file_name, TRAINING_SET[c]))
+ 
+# Lê a imagem baseada no nome do arquivo e no PATH settado na função load
+def read_image(file_name):
+    return mpimg.imread(PATH + file_name)
+ 
+# Retorna a classe dado o nome do arquivo da imagem
+def class_of(file_name):
+    return file_name.split("-")[0]
+ 
+# Calcula o pca da imagem X, mas antes redimenciona ela de [100][100][3] para [300][100]
+def PCA(X):
+    X = X.reshape(300,100)
+    pca = decomp.PCA(n_components=2)
+    pca.fit(X)
+    return pca.transform(X)
+ 
+#cria uma função para processar a imagem
+def Filter(X):
+    # transforma para escala de cinza
+    img_yuv = cv2.cvtColor(X, cv2.COLOR_BGR2YUV)
+ 
+    # Equaliza o histograma do canal Y
+    img_yuv[:,:,0] = cv2.equalizeHist(img_yuv[:,:,0])
+ 
+    # converte o YUV de volta para RGB
+    img_output = cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
+ 
+    return img_output
+ 
+def find_class(img,use_pca,use_filter):
+    diff_ = INF
+    mi = []
+    mc = 0
+    if(use_filter):
+        for c in TRAINING_SET:
+            for i in TRAINING_SET[c]:
+                img_compare = read_image(i)
+                diff_candidate = diff_candidate = np.linalg.norm(Filter(img[:,:,0:3])-Filter(img_compare[:,:,0:3]))
+                if (use_pca):
+                    diff_candidate = np.linalg.norm(PCA(img[:,:,0:3])-PCA(img_compare[:,:,0:3]))  
+                if diff_candidate < diff_:
+                    diff_ = diff_candidate
+                    mi = img_compare
+                    mc = c
+    else:
+        for c in TRAINING_SET:
+            for i in TRAINING_SET[c]:
+                img_compare = read_image(i)
+                diff_candidate = diff_candidate = np.linalg.norm(img[:,:,0:3]-img_compare[:,:,0:3])
+                if (use_pca):
+                    diff_candidate = np.linalg.norm(PCA(img[:,:,0:3])-PCA(img_compare[:,:,0:3]))  
+                if diff_candidate < diff_:
+                    diff_ = diff_candidate
+                    mi = img_compare
+                    mc = c
+    return diff_, mi, mc
+ 
+def recognize(show_result, use_pca, use_filter):
+    wrong = 0
+    right = 0
+    for fn in TEST_SET['all']:
+        img = read_image(fn)
+        diff_, mi, mc = find_class(img, use_pca, use_filter)
+        if class_of(fn) == str(mc):
+            right = right + 1
+        else:
+            wrong = wrong + 1
+        if show_result:
+            if class_of(fn) == str(mc):
+                print("ACERTOU")
+            else:
+                print("ERROU " + class_of(fn) + " =/= " + str(mc))
+            print('min_norm_difference = ' + str(diff_))
+            print('class = ' + str(mc))
+            f, (plt0, plt1) = plt.subplots(1, 2, figsize=(10,5))
+            plt0.imshow(img)
+            plt1.imshow(mi)
+            plt.show()
+    return (right*100.)/(right+wrong)
+ 
+def test(k, use_pca, use_filter, path, training_set_map, n, ext='.jpg'):
+    percent_sum = 0
+    for i in range(k):
+        load(path, training_set_map, n, ext)
+        percent_sum = percent_sum + recognize(False, use_pca, use_filter)
+    return float(percent_sum)/k
+ 
+ 
+# ## Taxas de acerto
+ 
+print("VERY-EASY 3 TIMES")
+print("BRUTE FORCE: " + str(test(3, False, False, 'recdev/very-easy/', {'2': [], '11': [], '15': [], '16': [], '87': []}, 2)) + "%")
+print("PCA: " + str(test(3, True, False, 'recdev/very-easy/', {'2': [], '11': [], '15': [], '16': [], '87': []}, 2)) + "%")
+print("BRUTE FORCE+FILTRO: " + str(test(3, False, True, 'recdev/very-easy/', {'2': [], '11': [], '15': [], '16': [], '87': []}, 2)) + "%")                                                                
+print("PCA+FILTRO: " + str(test(3, True, True, 'recdev/very-easy/', {'2': [], '11': [], '15': [], '16': [], '87': []}, 2)) + "%")
+ 
+print("\nEASY 3 TIMES")
+print("BRUTE FORCE: " + str(test(3, False, False, 'recdev/easy/', {'2': [], '11': [], '15': [], '16': [], '87': []}, 8)) + "%")
+print("PCA: " + str(test(3, True, False, 'recdev/easy/', {'2': [], '11': [], '15': [], '16': [], '87': []}, 8)) + "%")
+print("BRUTE FORCE+FILTRO: " + str(test(3, False, True, 'recdev/easy/', {'2': [], '11': [], '15': [], '16': [], '87': []}, 8)) + "%")                                                                
+print("PCA+FILTRO: " + str(test(3, True, True, 'recdev/easy/', {'2': [], '11': [], '15': [], '16': [], '87': []}, 8)) + "%")
+ 
+print("\nMEDIUM 1 TIME")
+print("BRUTE FORCE: " + str(test(1, False, False, 'recdev/medium/', {'1': [], '2': [], '3': [], '4': [], '5': [], '6': [], '7': [], '8': [], '9': [], '10': [],
+                        '11': [], '12': [], '13': [], '14': [], '15': [], '16': [], '17': [], '18': [], '19': [], '20': [],
+                        '21': [], '22': [], '23': [], '24': [], '25': [], '26': [], '27': [], '28': [], '29': [], '30': [],
+                        '31': [], '32': [], '33': [], '34': [], '35': [], '36': [], '37': [], '38': [], '39': [], '40': [],
+                        '41': [], '42': [], '43': [], '44': [], '45': [], '46': [], '47': [], '48': [], '49': [], '50': [],
+                       }, 7)) + "%")
+print("PCA: " + str(test(1, True, False, 'recdev/medium/', {'1': [], '2': [], '3': [], '4': [], '5': [], '6': [], '7': [], '8': [], '9': [], '10': [],
+                        '11': [], '12': [], '13': [], '14': [], '15': [], '16': [], '17': [], '18': [], '19': [], '20': [],
+                        '21': [], '22': [], '23': [], '24': [], '25': [], '26': [], '27': [], '28': [], '29': [], '30': [],
+                        '31': [], '32': [], '33': [], '34': [], '35': [], '36': [], '37': [], '38': [], '39': [], '40': [],
+                        '41': [], '42': [], '43': [], '44': [], '45': [], '46': [], '47': [], '48': [], '49': [], '50': [],
+                       }, 7)) + "%")
+print("BRUTE FORCE+FILTRO: " + str(test(1, False, True, 'recdev/medium/', {'1': [], '2': [], '3': [], '4': [], '5': [], '6': [], '7': [], '8': [], '9': [], '10': [],
+                        '11': [], '12': [], '13': [], '14': [], '15': [], '16': [], '17': [], '18': [], '19': [], '20': [],
+                        '21': [], '22': [], '23': [], '24': [], '25': [], '26': [], '27': [], '28': [], '29': [], '30': [],
+                        '31': [], '32': [], '33': [], '34': [], '35': [], '36': [], '37': [], '38': [], '39': [], '40': [],
+                        '41': [], '42': [], '43': [], '44': [], '45': [], '46': [], '47': [], '48': [], '49': [], '50': [],
+                       }, 7)) + "%")
+print("PCA+FILTRO: " + str(test(1, True, True, 'recdev/medium/', {'1': [], '2': [], '3': [], '4': [], '5': [], '6': [], '7': [], '8': [], '9': [], '10': [],
+                        '11': [], '12': [], '13': [], '14': [], '15': [], '16': [], '17': [], '18': [], '19': [], '20': [],
+                        '21': [], '22': [], '23': [], '24': [], '25': [], '26': [], '27': [], '28': [], '29': [], '30': [],
+                        '31': [], '32': [], '33': [], '34': [], '35': [], '36': [], '37': [], '38': [], '39': [], '40': [],
+                        '41': [], '42': [], '43': [], '44': [], '45': [], '46': [], '47': [], '48': [], '49': [], '50': [],
+                       }, 7)) + "%")
+ 
+print("\nEXTRA 3 TIMES")
+percent = (test(3, False, False, 'recdev/extras/facebookfaces/crop-inner/', {'1': [], '2': [], '3': [], '4': [], '5': []}, 9) +
+test(3, False,False, 'recdev/extras/facebookfaces/crop-inner/', {'1': [], '2': [], '3': [], '4': [], '5': []}, 9) +
+test(3, False,False, 'recdev/extras/facebookfaces-2/crop-outer/', {'1': [], '2': [], '3': [], '4': [], '5': []}, 10, ".png") +
+test(3, False,False, 'recdev/extras/facebookfaces-2/crop-outer/', {'1': [], '2': [], '3': [], '4': [], '5': []}, 10,".png"))/4.
+print("BRUTE FORCE: " + str(percent) + "%")
+ 
+percent = (test(3, True, False,'recdev/extras/facebookfaces/crop-inner/', {'1': [], '2': [], '3': [], '4': [], '5': []}, 9) +
+test(3, True,False, 'recdev/extras/facebookfaces/crop-inner/', {'1': [], '2': [], '3': [], '4': [], '5': []}, 9) +
+test(3, True, False,'recdev/extras/facebookfaces-2/crop-outer/', {'1': [], '2': [], '3': [], '4': [], '5': []}, 10, ".png") +
+test(3, True, False,'recdev/extras/facebookfaces-2/crop-outer/', {'1': [], '2': [], '3': [], '4': [], '5': []}, 10,".png"))/4.
+print("PCA: " + str(percent) + "%")
+ 
+# ## Resultados para as bases very_easy, easy, medium e extra usando força bruta e PCA
+  
+# VERY_EASY COM FORÇA BRUTA
+load('recdev/very-easy/', {'2': [], '11': [], '15': [], '16': [], '87': []}, 2)
+print("\n\nVERY EASY COM FORÇA BRUTA\n")
+percent = recognize(True, False, False)
+print(str(percent) + "% de acerto")
+ 
+# VERY_EASY COM PCA
+load('recdev/very-easy/', {'2': [], '11': [], '15': [], '16': [], '87': []}, 2)
+print("\n\nVERY EASY COM PCA\n")
+percent = recognize(True, True, False)
+print(str(percent) + "% de acerto")
+                                                                 
+# VERY_EASY COM FORÇA BRUTA + FILTRO
+load('recdev/very-easy/', {'2': [], '11': [], '15': [], '16': [], '87': []}, 2)
+print("\n\nVERY EASY COM FORÇA BRUTA + FILTRO\n")
+percent = recognize(True, False, True)
+print(str(percent) + "% de acerto")
+                                                                 
+# VERY_EASY COM PCA + FILTRO
+load('recdev/very-easy/', {'2': [], '11': [], '15': [], '16': [], '87': []}, 2)
+print("\n\nVERY EASY COM PCA + FILTRO\n")
+percent = recognize(True, True, True)
+print(str(percent) + "% de acerto")                                                                
+ 
+ 
+ 
+# EASY COM FORÇA BRUTA
+load('recdev/easy/', {'2': [], '11': [], '15': [], '16': [], '87': []}, 8)
+print("\n\nVERY EASY COM FORÇA BRUTA\n")
+percent = recognize(True, False, False)
+print(str(percent) + "% de acerto")
+                                                                 
+# EASY COM FORÇA BRUTA+filter
+load('recdev/easy/', {'2': [], '11': [], '15': [], '16': [], '87': []}, 8)
+print("\n\nEASY COM FORÇA BRUTA + FILTRO\n")
+percent = recognize(True, False, True)
+print(str(percent) + "% de acerto")
+                                         
+ 
+# EASY COM PCA
+load('recdev/easy/', {'2': [], '11': [], '15': [], '16': [], '87': []}, 8)
+print("\n\nEASY COM PCA\n")
+percent = recognize(True, True, False)
+print(str(percent) + "% de acerto")
+ 
+# EASY COM PCA + filter
+load('recdev/easy/', {'2': [], '11': [], '15': [], '16': [], '87': []}, 8)
+print("\n\nEASY COM PCA + FILTRO\n")
+percent = recognize(True, True, True)
+print(str(percent) + "% de acerto")
+                                                                 
+ 
+ 
+# MEDIUM COM FORÇA BRUTA
+load('recdev/medium/', {'1': [], '2': [], '3': [], '4': [], '5': [], '6': [], '7': [], '8': [], '9': [], '10': [],
+                        '11': [], '12': [], '13': [], '14': [], '15': [], '16': [], '17': [], '18': [], '19': [], '20': [],
+                        '21': [], '22': [], '23': [], '24': [], '25': [], '26': [], '27': [], '28': [], '29': [], '30': [],
+                        '31': [], '32': [], '33': [], '34': [], '35': [], '36': [], '37': [], '38': [], '39': [], '40': [],
+                        '41': [], '42': [], '43': [], '44': [], '45': [], '46': [], '47': [], '48': [], '49': [], '50': [],
+                       }, 7)
+print("\n\nMEDIUM COM FORÇA BRUTA\n")
+percent = recognize(True,False, False)
+print(str(percent) + "% de acerto")
+ 
+# MEDIUM COM FORÇA BRUTA+ filter
+load('recdev/medium/', {'1': [], '2': [], '3': [], '4': [], '5': [], '6': [], '7': [], '8': [], '9': [], '10': [],
+                        '11': [], '12': [], '13': [], '14': [], '15': [], '16': [], '17': [], '18': [], '19': [], '20': [],
+                        '21': [], '22': [], '23': [], '24': [], '25': [], '26': [], '27': [], '28': [], '29': [], '30': [],
+                        '31': [], '32': [], '33': [], '34': [], '35': [], '36': [], '37': [], '38': [], '39': [], '40': [],
+                        '41': [], '42': [], '43': [], '44': [], '45': [], '46': [], '47': [], '48': [], '49': [], '50': [],
+                       }, 7)
+print("M\n\nEDIUM COM FORÇA BRUTA + FILTRO\n")
+percent = recognize(True,False, True)
+print(str(percent) + "% de acerto")
+ 
+# In[14]:
+ 
+# MEDIUM COM PCA
+load('recdev/medium/', {'1': [], '2': [], '3': [], '4': [], '5': [], '6': [], '7': [], '8': [], '9': [], '10': [],
+                        '11': [], '12': [], '13': [], '14': [], '15': [], '16': [], '17': [], '18': [], '19': [], '20': [],
+                        '21': [], '22': [], '23': [], '24': [], '25': [], '26': [], '27': [], '28': [], '29': [], '30': [],
+                        '31': [], '32': [], '33': [], '34': [], '35': [], '36': [], '37': [], '38': [], '39': [], '40': [],
+                        '41': [], '42': [], '43': [], '44': [], '45': [], '46': [], '47': [], '48': [], '49': [], '50': [],
+                       }, 7)
+print("\n\nMEDIUM COM PCA\n")
+percent = recognize(True,True, False)
+print(str(percent) + "% de acerto")
+ 
+# MEDIUM COM PCA + Filter
+load('recdev/medium/', {'1': [], '2': [], '3': [], '4': [], '5': [], '6': [], '7': [], '8': [], '9': [], '10': [],
+                        '11': [], '12': [], '13': [], '14': [], '15': [], '16': [], '17': [], '18': [], '19': [], '20': [],
+                        '21': [], '22': [], '23': [], '24': [], '25': [], '26': [], '27': [], '28': [], '29': [], '30': [],
+                        '31': [], '32': [], '33': [], '34': [], '35': [], '36': [], '37': [], '38': [], '39': [], '40': [],
+                        '41': [], '42': [], '43': [], '44': [], '45': [], '46': [], '47': [], '48': [], '49': [], '50': [],
+                       }, 7)
+print("\n\nMEDIUM COM PCA + FILTRO\n")
+percent = recognize(True, True, True)
+print(str(percent) + "% de acerto")
+ 
+ 
+# EXTRAS COM FORÇA BRUTA
+percent_sum = 0
+ 
+load('recdev/extras/facebookfaces/crop-inner/', {'1': [], '2': [], '3': [], '4': [], '5': []}, 9)
+print("\n\nEXTRA COM FORÇA BRUTA\n")
+percent = recognize(True,False, False)
+percent_sum = percent_sum + percent
+ 
+load('recdev/extras/facebookfaces/crop-outer/', {'1': [], '2': [], '3': [], '4': [], '5': []}, 9)
+print("\n\nEXTRA COM FORÇA BRUTA\n")
+percent = recognize(True,False, False)
+percent_sum = percent_sum + percent
+ 
+load('recdev/extras/facebookfaces-2/crop-inner/', {'1': [], '2': [], '3': [], '4': [], '5': []}, 10, ".png")
+print("\n\nEXTRA COM FORÇA BRUTA\n")
+percent = recognize(True,False, False)
+percent_sum = percent_sum + percent
+ 
+load('recdev/extras/facebookfaces-2/crop-outer/', {'1': [], '2': [], '3': [], '4': [], '5': []}, 10, ".png")
+print("\n\nEXTRA COM FORÇA BRUTA\n")
+percent = recognize(True,False, False)
+percent_sum = percent_sum + percent
+ 
+print(str(percent_sum/4.) + "% de acerto\n")
+ 
+# EXTRAS COM PCA
+percent_sum = 0
+ 
+load('recdev/extras/facebookfaces/crop-inner/', {'1': [], '2': [], '3': [], '4': [], '5': []}, 9)
+print("\n\nEXTRA COM PCA\n")
+percent = recognize(True,True,False)
+percent_sum = percent_sum + percent
+ 
+load('recdev/extras/facebookfaces/crop-outer/', {'1': [], '2': [], '3': [], '4': [], '5': []}, 9)
+print("\n\nEXTRA COM PCA\n")
+percent = recognize(True,True, False)
+percent_sum = percent_sum + percent
+ 
+load('recdev/extras/facebookfaces-2/crop-inner/', {'1': [], '2': [], '3': [], '4': [], '5': []}, 10, ".png")
+print("\n\nEXTRA COM PCA\n")
+percent = recognize(True,True, False)
+percent_sum = percent_sum + percent
+ 
+load('recdev/extras/facebookfaces-2/crop-outer/', {'1': [], '2': [], '3': [], '4': [], '5': []}, 10, ".png")
+print("\n\nEXTRA COM PCA\n")
+percent = recognize(True,True, False)
+percent_sum = percent_sum + percent
+ 
+print(str(percent_sum/4.) + "% de acerto\n")
